@@ -1,0 +1,20 @@
+@Qhse.Api_HostAddress = http://localhost:5138
+
+GET {{Qhse.Api_HostAddress}}/api/health
+Accept: application/json
+
+###
+
+GET {{Qhse.Api_HostAddress}}/api/incidents
+Accept: application/json
+
+###
+
+POST {{Qhse.Api_HostAddress}}/api/ai/analyze
+Content-Type: application/json
+
+{
+  "text": "Fuite chimique detectee en zone B avec interruption de production et besoin d'actions correctives.",
+  "sourceType": "incident",
+  "sourceReference": "INC-2041"
+}
