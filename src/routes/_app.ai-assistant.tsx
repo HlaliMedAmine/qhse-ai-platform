@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, Send, Bot, User } from "lucide-react";
 import { PageHeader } from "@/components/qhse/PageHeader";
+import { apiUrl } from "@/lib/api";
 
 export const Route = createFileRoute("/_app/ai-assistant")({
   component: AssistantPage,
 });
 
-const AI_ANALYZE_URL = "http://localhost:5138/api/ai/analyze";
+const AI_ANALYZE_URL = apiUrl("/api/ai/analyze");
 
 interface AiAnalyzeResponse {
   summary: string;
@@ -77,7 +78,7 @@ function AssistantPage() {
           role: "assistant",
           isError: true,
           content:
-            "Impossible de contacter l'API d'analyse QHSE. Verifiez que le backend .NET est lance sur http://localhost:5138.",
+            "Impossible de contacter l'API d'analyse QHSE. Verifiez que le backend Azure est disponible et que la configuration CORS autorise cette application.",
         },
       ]);
     } finally {
