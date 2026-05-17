@@ -26,13 +26,11 @@ jobs:
         run: cd publish && zip -r ../publish.zip .
         
       - name: Deploy via ZipDeploy API
-        env:
-          DEPLOY_USER: '$qhse-api-dev-amine'
-          DEPLOY_PASS: 'RlzHpchGRwHcYFgEEuky9id9bxZqlK5E70oCc7Fx2slPnlDzfoJltiNstrtc'
         run: |
+          TOKEN=$(echo -n '$qhse-api-dev-amine:RlzHpchGRwHcYFgEEuky9id9bxZqlK5E70oCc7Fx2slPnlDzfoJltiNstrtc' | base64 -w 0)
           curl -X POST \
             "https://qhse-api-dev-amine.scm.azurewebsites.net/api/zipdeploy" \
-            -u "${DEPLOY_USER}:${DEPLOY_PASS}" \
+            -H "Authorization: Basic ${TOKEN}" \
             -H "Content-Type: application/zip" \
             --data-binary @publish.zip \
             --fail \
