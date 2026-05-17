@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Qhse.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+294a830a82cc68e75d6add9e86c81d2677376025")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+213d02e540e8586a8d0c9c50c205adb4248e119f")]
 [assembly: System.Reflection.AssemblyProductAttribute("Qhse.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Qhse.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
