@@ -9,5 +9,5 @@ public sealed class AiAnalysisLog : AuditableEntity
     public RiskLevel RiskLevel { get; set; }
     public string CorrectiveActionsJson { get; set; } = "[]";
     public string RecommendationsJson { get; set; } = "[]";
-    public string Provider { get; set; } = "MockAzureOpenAI";
+    public string Provider { get; set; } = "AzureOpenAI";
 }

@@ -1,29 +1,29 @@
+using System.ClientModel;
 using System.Text.Json;
-using Azure;
-using Azure.AI.OpenAI;
 using OpenAI.Chat;
-using Microsoft.Extensions.Options;
 using Qhse.Api.Contracts.Ai;
 using Qhse.Api.Domain.Entities;
 using Qhse.Api.Domain.Enums;
 using Qhse.Api.Infrastructure.Repositories;
-using Qhse.Api.Options;
 
 namespace Qhse.Api.Services;
 
 public sealed class AiAnalysisService(
     IRepository<AiAnalysisLog> repository,
-    IOptions<AzureOpenAiOptions> options,
+    IAzureOpenAiChatClientFactory chatClientFactory,
     ILogger<AiAnalysisService> logger) : IAiAnalysisService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task<AiAnalyzeResponse> AnalyzeAsync(AiAnalyzeRequest request, CancellationToken cancellationToken)
     {
         var prompt = BuildPrompt(request);
-        logger.LogInformation("Preparing QHSE AI analysis prompt with {PromptLength} characters.", prompt.Length);
+        logger.LogInformation(
+            "Sending QHSE AI analysis request to Azure OpenAI deployment {DeploymentName}. Prompt length: {PromptLength}.",
+            chatClientFactory.DeploymentName,
+            prompt.Length);
 
-        var response = options.Value.UseMock
-            ? CreateMockAnalysis(request.Text)
-            : await CallAzureOpenAiAsync(prompt, cancellationToken);
+        var response = await CallAzureOpenAiAsync(prompt, cancellationToken);
 
         await TrySaveAnalysisLogAsync(request, response, cancellationToken);
         return response;
@@ -31,41 +31,90 @@ public sealed class AiAnalysisService(
 
     private async Task<AiAnalyzeResponse> CallAzureOpenAiAsync(string prompt, CancellationToken cancellationToken)
     {
-        var opts = options.Value;
-        var client = new AzureOpenAIClient(new Uri(opts.Endpoint), new AzureKeyCredential(opts.ApiKey));
-        var chatClient = client.GetChatClient(opts.DeploymentName);
+        var chatClient = chatClientFactory.CreateClient();
 
-        var completion = await chatClient.CompleteChatAsync(
+        ChatCompletion completion = await chatClient.CompleteChatAsync(
             [
                 new SystemChatMessage("""
-                    You are a QHSE expert assistant. Always respond with valid JSON only.
-                    Format: {"summary":"...","riskLevel":"Low|Moderate|High|Critical","correctiveActions":["..."],"recommendations":["..."]}
+                    You are a senior QHSE expert assistant.
+                    Analyze the user-provided QHSE text and return only valid JSON matching the requested schema.
+                    Be concise, practical, and suitable for an enterprise QHSE dashboard.
                     """),
                 new UserChatMessage(prompt)
             ],
-            new ChatCompletionOptions { MaxOutputTokenCount = 1000 },
+            CreateChatOptions(),
             cancellationToken);
 
-        var json = completion.Value.Content[0].Text;
+        var json = completion.Content.FirstOrDefault()?.Text;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new InvalidOperationException("Azure OpenAI returned an empty analysis response.");
+        }
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<AzureOpenAiResult>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                ?? throw new InvalidOperationException("Null response from Azure OpenAI.");
+            var parsed = JsonSerializer.Deserialize<AzureOpenAiAnalysisResult>(json, JsonOptions)
+                ?? throw new InvalidOperationException("Azure OpenAI returned a null analysis payload.");
+
+            var riskLevel = NormalizeRiskLevel(parsed.RiskLevel);
+
+            logger.LogInformation(
+                "Azure OpenAI analysis completed with risk level {RiskLevel} using deployment {DeploymentName}.",
+                riskLevel,
+                chatClientFactory.DeploymentName);
 
             return new AiAnalyzeResponse(
                 Summary: parsed.Summary,
-                RiskLevel: parsed.RiskLevel,
+                RiskLevel: riskLevel.ToApiValue(),
                 CorrectiveActions: parsed.CorrectiveActions,
                 Recommendations: parsed.Recommendations,
-                Provider: "AzureOpenAI/gpt-4o-mini",
+                Provider: $"AzureOpenAI/{chatClientFactory.DeploymentName}",
                 GeneratedAtUtc: DateTimeOffset.UtcNow);
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            logger.LogError(ex, "Failed to parse Azure OpenAI response: {Json}", json);
-            return CreateMockAnalysis(prompt);
+            logger.LogError(ex, "Azure OpenAI returned invalid JSON: {ResponseJson}", json);
+            throw new InvalidOperationException("Azure OpenAI returned invalid JSON for the QHSE analysis response.", ex);
         }
+    }
+
+    private static ChatCompletionOptions CreateChatOptions()
+    {
+        return new ChatCompletionOptions
+        {
+            MaxOutputTokenCount = 1000,
+            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                jsonSchemaFormatName: "qhse_ai_analysis",
+                jsonSchema: BinaryData.FromString("""
+                    {
+                      "type": "object",
+                      "properties": {
+                        "summary": {
+                          "type": "string",
+                          "description": "A concise QHSE summary of the submitted text."
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": ["Low", "Moderate", "High", "Critical"],
+                          "description": "Overall QHSE risk level."
+                        },
+                        "correctiveActions": {
+                          "type": "array",
+                          "items": { "type": "string" },
+                          "description": "Immediate or near-term corrective actions."
+                        },
+                        "recommendations": {
+                          "type": "array",
+                          "items": { "type": "string" },
+                          "description": "Preventive recommendations and management follow-up."
+                        }
+                      },
+                      "required": ["summary", "riskLevel", "correctiveActions", "recommendations"],
+                      "additionalProperties": false
+                    }
+                    """),
+                jsonSchemaIsStrict: true)
+        };
     }
 
     private async Task TrySaveAnalysisLogAsync(AiAnalyzeRequest request, AiAnalyzeResponse response, CancellationToken cancellationToken)
@@ -76,9 +125,9 @@ public sealed class AiAnalysisService(
             {
                 InputText = request.Text,
                 Summary = response.Summary,
-                RiskLevel = Enum.Parse<RiskLevel>(response.RiskLevel, ignoreCase: true),
-                CorrectiveActionsJson = JsonSerializer.Serialize(response.CorrectiveActions),
-                RecommendationsJson = JsonSerializer.Serialize(response.Recommendations),
+                RiskLevel = NormalizeRiskLevel(response.RiskLevel),
+                CorrectiveActionsJson = JsonSerializer.Serialize(response.CorrectiveActions, JsonOptions),
+                RecommendationsJson = JsonSerializer.Serialize(response.Recommendations, JsonOptions),
                 Provider = response.Provider
             };
 
@@ -94,37 +143,35 @@ public sealed class AiAnalysisService(
     private static string BuildPrompt(AiAnalyzeRequest request)
     {
         return $"""
-            You are a QHSE expert assistant. Analyze the following operational text.
-            Return JSON with: summary, riskLevel, correctiveActions, recommendations.
+            Analyze this QHSE input and classify its operational risk.
+
             Source type: {request.SourceType ?? "free-text"}
             Source reference: {request.SourceReference ?? "n/a"}
+
+            Return:
+            - summary
+            - riskLevel
+            - correctiveActions
+            - recommendations
 
             Text:
             {request.Text}
             """;
     }
 
-    private static AiAnalyzeResponse CreateMockAnalysis(string text)
+    private static RiskLevel NormalizeRiskLevel(string value)
     {
-        var normalized = text.ToLowerInvariant();
-        var level = normalized.Contains("critical") || normalized.Contains("critique") || normalized.Contains("chemical") || normalized.Contains("chimique")
-            ? RiskLevel.Critical
-            : normalized.Contains("spill") || normalized.Contains("leak") || normalized.Contains("fuite") || normalized.Contains("non-conform")
-                ? RiskLevel.High
-                : RiskLevel.Moderate;
+        if (EnumParser.TryParse<RiskLevel>(value, out var riskLevel))
+        {
+            return riskLevel;
+        }
 
-        return new AiAnalyzeResponse(
-            Summary: $"Mock analysis: the submitted QHSE text indicates a {level} risk profile.",
-            RiskLevel: level.ToApiValue(),
-            CorrectiveActions: ["Secure the affected area.", "Assign an accountable owner.", "Record root-cause analysis."],
-            Recommendations: ["Review the relevant procedure.", "Trend similar events.", "Escalate if risk remains High or Critical."],
-            Provider: "MockAzureOpenAI",
-            GeneratedAtUtc: DateTimeOffset.UtcNow);
+        throw new InvalidOperationException($"Azure OpenAI returned an unsupported risk level: {value}");
     }
 
-    private sealed record AzureOpenAiResult(
+    private sealed record AzureOpenAiAnalysisResult(
         string Summary,
         string RiskLevel,
-        List<string> CorrectiveActions,
-        List<string> Recommendations);
+        IReadOnlyList<string> CorrectiveActions,
+        IReadOnlyList<string> Recommendations);
 }

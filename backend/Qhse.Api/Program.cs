@@ -49,6 +49,7 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<INonConformityService, NonConformityService>();
 builder.Services.AddScoped<IRiskService, RiskService>();
 builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddSingleton<IAzureOpenAiChatClientFactory, AzureOpenAiChatClientFactory>();
 builder.Services.AddScoped<IAiAnalysisService, AiAnalysisService>();
 
 var app = builder.Build();

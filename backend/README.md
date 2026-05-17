@@ -43,7 +43,7 @@ backend/
 - Swagger via Swashbuckle
 - CORS for React dev origins
 - Repository + service layering
-- Mock Azure OpenAI service, ready for real provider integration
+- Azure OpenAI chat completion integration via `Azure.AI.OpenAI`
 
 ## Key Endpoints
 
@@ -80,7 +80,7 @@ Response:
 
 ```json
 {
-  "summary": "Mock analysis: the submitted QHSE text indicates a Critical risk profile and requires documented follow-up.",
+  "summary": "The event indicates a critical chemical safety risk requiring immediate containment and follow-up.",
   "riskLevel": "Critical",
   "correctiveActions": [
     "Secure the affected area and confirm immediate controls are in place.",
@@ -92,7 +92,7 @@ Response:
     "Trend similar events across sites for recurring causes.",
     "Escalate to QHSE leadership if residual risk remains High or Critical."
   ],
-  "provider": "MockAzureOpenAI",
+  "provider": "AzureOpenAI/gpt-4o-mini",
   "generatedAtUtc": "2026-05-16T16:30:00Z"
 }
 ```
@@ -106,9 +106,16 @@ Response:
 - `AzureOpenAI:Endpoint`
 - `AzureOpenAI:DeploymentName`
 - `AzureOpenAI:ApiKey`
-- `AzureOpenAI:UseMock`
 
-For Azure App Service later, move secrets to App Service configuration or Key Vault references.
+Set these as environment variables in Azure App Service:
+
+```text
+AzureOpenAI__Endpoint=https://<your-resource>.openai.azure.com
+AzureOpenAI__DeploymentName=gpt-4o-mini
+AzureOpenAI__ApiKey=<secret>
+```
+
+Keep secrets in Azure App Service configuration or Key Vault references. Do not commit API keys to source control.
 
 ## Run Locally
 
@@ -143,7 +150,7 @@ This backend is ready to evolve toward:
 
 - Azure App Service deployment
 - Azure SQL Database
-- Azure OpenAI provider implementation in `IAiAnalysisService`
+- Azure OpenAI App Service settings via environment variables
 - Azure DevOps build/test/deploy pipeline
 - Terraform provisioning later
 
