@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'backend/**'
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -24,10 +25,12 @@ jobs:
       - name: Zip publish folder
         run: cd publish && zip -r ../publish.zip .
         
-      - name: Deploy via ZipDeploy
+      - name: Deploy via ZipDeploy API
         run: |
           curl -X POST \
             "https://qhse-api-dev-amine.scm.azurewebsites.net/api/zipdeploy" \
             -u '$qhse-api-dev-amine:RlzHpchGRwHcYFgEEuky9id9bxZqlK5E70oCc7Fx2slPnlDzfoJltiNstrtc' \
             -H "Content-Type: application/zip" \
-            --data-binary @publish.zip
+            --data-binary @publish.zip \
+            --fail \
+            -v
