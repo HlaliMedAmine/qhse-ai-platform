@@ -10,11 +10,17 @@
         "projectUniqueName": "D:\\ai-qhse-guardian-main\\backend\\Qhse.Api\\Qhse.Api.csproj",
         "projectName": "Qhse.Api",
         "projectPath": "D:\\ai-qhse-guardian-main\\backend\\Qhse.Api\\Qhse.Api.csproj",
-        "packagesPath": "D:\\ai-qhse-guardian-main\\.dotnet-home\\.nuget\\packages\\",
+        "packagesPath": "C:\\Users\\Hlali Mohamed Amine\\.nuget\\packages\\",
         "outputPath": "D:\\ai-qhse-guardian-main\\backend\\Qhse.Api\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
-          "D:\\ai-qhse-guardian-main\\NuGet.Config"
+          "D:\\ai-qhse-guardian-main\\NuGet.Config",
+          "C:\\Users\\Hlali Mohamed Amine\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
