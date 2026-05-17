@@ -1,4 +1,7 @@
 using System.Text.Json;
+using Azure;
+using Azure.AI.OpenAI;
+using OpenAI.Chat;
 using Microsoft.Extensions.Options;
 using Qhse.Api.Contracts.Ai;
 using Qhse.Api.Domain.Entities;
@@ -20,10 +23,49 @@ public sealed class AiAnalysisService(
 
         var response = options.Value.UseMock
             ? CreateMockAnalysis(request.Text)
-            : throw new NotSupportedException("Azure OpenAI live integration is not enabled yet. Set UseMock=true or implement the provider client.");
+            : await CallAzureOpenAiAsync(prompt, cancellationToken);
 
         await TrySaveAnalysisLogAsync(request, response, cancellationToken);
         return response;
+    }
+
+    private async Task<AiAnalyzeResponse> CallAzureOpenAiAsync(string prompt, CancellationToken cancellationToken)
+    {
+        var opts = options.Value;
+        var client = new AzureOpenAIClient(new Uri(opts.Endpoint), new AzureKeyCredential(opts.ApiKey));
+        var chatClient = client.GetChatClient(opts.DeploymentName);
+
+        var completion = await chatClient.CompleteChatAsync(
+            [
+                new SystemChatMessage("""
+                    You are a QHSE expert assistant. Always respond with valid JSON only.
+                    Format: {"summary":"...","riskLevel":"Low|Moderate|High|Critical","correctiveActions":["..."],"recommendations":["..."]}
+                    """),
+                new UserChatMessage(prompt)
+            ],
+            new ChatCompletionOptions { MaxOutputTokenCount = 1000 },
+            cancellationToken);
+
+        var json = completion.Value.Content[0].Text;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<AzureOpenAiResult>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? throw new InvalidOperationException("Null response from Azure OpenAI.");
+
+            return new AiAnalyzeResponse(
+                Summary: parsed.Summary,
+                RiskLevel: parsed.RiskLevel,
+                CorrectiveActions: parsed.CorrectiveActions,
+                Recommendations: parsed.Recommendations,
+                Provider: "AzureOpenAI/gpt-4o-mini",
+                GeneratedAtUtc: DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to parse Azure OpenAI response: {Json}", json);
+            return CreateMockAnalysis(prompt);
+        }
     }
 
     private async Task TrySaveAnalysisLogAsync(AiAnalyzeRequest request, AiAnalyzeResponse response, CancellationToken cancellationToken)
@@ -45,7 +87,7 @@ public sealed class AiAnalysisService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "AI analysis was generated but could not be persisted. Returning the mock analysis response anyway.");
+            logger.LogWarning(ex, "AI analysis was generated but could not be persisted.");
         }
     }
 
@@ -72,21 +114,17 @@ public sealed class AiAnalysisService(
                 : RiskLevel.Moderate;
 
         return new AiAnalyzeResponse(
-            Summary: $"Mock analysis: the submitted QHSE text indicates a {level} risk profile and requires documented follow-up.",
+            Summary: $"Mock analysis: the submitted QHSE text indicates a {level} risk profile.",
             RiskLevel: level.ToApiValue(),
-            CorrectiveActions:
-            [
-                "Secure the affected area and confirm immediate controls are in place.",
-                "Assign an accountable owner and target closure date.",
-                "Record root-cause analysis and evidence of corrective action completion."
-            ],
-            Recommendations:
-            [
-                "Review the relevant procedure and training records.",
-                "Trend similar events across sites for recurring causes.",
-                "Escalate to QHSE leadership if residual risk remains High or Critical."
-            ],
+            CorrectiveActions: ["Secure the affected area.", "Assign an accountable owner.", "Record root-cause analysis."],
+            Recommendations: ["Review the relevant procedure.", "Trend similar events.", "Escalate if risk remains High or Critical."],
             Provider: "MockAzureOpenAI",
             GeneratedAtUtc: DateTimeOffset.UtcNow);
     }
+
+    private sealed record AzureOpenAiResult(
+        string Summary,
+        string RiskLevel,
+        List<string> CorrectiveActions,
+        List<string> Recommendations);
 }
